@@ -1,0 +1,34 @@
+name: Update External Skills
+
+on:
+  schedule:
+    - cron: '0 0 * * 1'
+  workflow_dispatch:
+
+jobs:
+  update-skills:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4.44.3
+
+      - name: Update skills from external-skills.yaml
+        run: ./scripts/update-external-skills.sh
+
+      - name: Create PR if changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: 'chore: update external skills'
+          branch: chore/update-external-skills
+          commit-message: 'chore: update external skills'
+          body: |
+            外部スキルの自動更新
+          delete-branch: true
