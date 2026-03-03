@@ -1,0 +1,50 @@
+name: Update External Skills
+
+on:
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-skills:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup yq
+        uses: mikefarah/yq@v4.44.3
+
+      - name: Install configured external skills
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          while IFS=$'\t' read -r repo skill; do
+            if [[ -z "${repo}" || -z "${skill}" ]]; then
+              continue
+            fi
+
+            echo "Installing skill '${skill}' from '${repo}'"
+            npx skills add "${repo}" --skill "${skill}"
+          done < <(yq eval -r '.skills[] | [.repo, .skill] | @tsv' external-skills.yaml)
+
+      - name: Create pull request if updates exist
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "chore: update external skills"
+          branch: chore/update-external-skills
+          commit-message: "chore: update external skills"
+          body: |
+            外部リポジトリで管理されている Skill を `external-skills.yaml` に基づいて自動更新しました。
+          delete-branch: true

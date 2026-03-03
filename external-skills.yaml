@@ -1,0 +1,7 @@
+skills:
+  - repo: https://github.com/anthropics/skills
+    skill: frontend-design
+  - repo: https://github.com/vercel/turborepo
+    skill: turborepo
+  - repo: https://github.com/vercel/ai
+    skill: ai-sdk
