@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "submit-pr": {
+      "source": "yoshinani-dev/skills",
+      "sourceType": "github",
+      "computedHash": "17056f9be95b2d534a20dc9912027b941d683778c7b6f46049ec67bc69070d89"
+    }
+  }
+}
