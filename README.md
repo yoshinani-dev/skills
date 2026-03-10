@@ -9,3 +9,8 @@ AIコーディングアシスタント向けのスキル集です。
 ```bash
 npx skills add https://github.com/yoshinani-dev/skills
 ```
+
+必要なスキルのみをインストールする方法
+```bash
+npx skills add https://github.com/yoshinani-dev/skills --skill submit-pr
+```
