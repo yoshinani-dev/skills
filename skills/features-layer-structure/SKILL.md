@@ -1,15 +1,15 @@
 ---
 name: features-layer-structure
-description: featuresパッケージのレイヤー構造（domain/、repo/、usecase/の3層構造）
+description: featuresパッケージのレイヤー構造（domain/、read/、write/のCQRS構造）
 ---
 
 # featuresパッケージのレイヤー構造
 
-`packages/features`パッケージは以下の3つのレイヤーディレクトリで構成されています：
+`packages/features`パッケージはCQRSの考え方を取り入れ、以下の3つのレイヤーディレクトリで構成されています：
 
 - `domain/`: ドメインモデルとビジネスロジック
-- `repo/`: データアクセス層
-- `usecase/`: ユースケース層
+- `read/`: 取得系（クエリ）処理
+- `write/`: 更新系（コマンド）処理
 
 ## ディレクトリ構造
 
@@ -18,14 +18,26 @@ description: featuresパッケージのレイヤー構造（domain/、repo/、us
 ```
 packages/features/src/{feature-name}/
 ├── domain/
-│   ├── index.ts          # 型定義とスキーマのエクスポート
-│   ├── {entity}.ts       # エンティティの定義とドメインロジック
-│   └── {value-object}.ts # 値オブジェクトの定義
-├── repo/
-│   └── index.ts          # データアクセス関数
-└── usecase/
-    ├── index.ts          # 共通ユースケース
-    └── {usecase-name}.ts # 個別ユースケース（各ファイルが1つのユースケース）
+│   ├── entity/
+│   │   └── {entity}.ts        # エンティティの定義とドメインロジック
+│   ├── value-object/
+│   │   └── {value-object}.ts  # 値オブジェクトの定義
+│   └── service/
+│       └── {service}.ts       # ドメインサービス
+├── read/
+│   ├── query/
+│   │   └── {query-name}.ts    # 取得系のユースケース（DBなどへの問い合わせも含める）
+│   ├── presenter/
+│   │   └── {presenter}.ts     # 取得結果をUI向けに変換
+│   └── schema/
+│       └── index.ts           # 取得用DTO定義
+└── write/
+    ├── usecase/
+    │   └── {usecase-name}.ts  # 更新系ユースケース（コマンド）
+    ├── repository/
+    │   └── {repository}.ts    # Entity <-> DB永続化
+    └── gateway/
+        └── {gateway}.ts       # 外部SDKや外部サービス連携
 ```
 
 ## レイヤーの責務
@@ -35,31 +47,33 @@ packages/features/src/{feature-name}/
 - **型定義**: Valibotスキーマを使用した型定義（`v.object()`, `v.pipe()`など）
 - **値オブジェクト**: `v.brand()`を使用して型安全な値オブジェクトを定義
 - **ドメインロジック**: 純粋関数として実装（例：`constructSite`, `updateName`, `updateUrl`）
+- **ドメインサービス**: 複数エンティティ/値オブジェクトにまたがるドメインルールを表現
 - **バリデーション**: Valibotスキーマによるバリデーション
 - **エンコード/デコード**: IDのエンコード/デコード関数（例：`encodeSiteId`, `decodeShortUrlId`）
 - **エラーハンドリング**: `TaggedError`を使用したエラー返却
 - **外部依存を持たない**: Prismaクライアントや外部APIに依存しない
 
-### repo/
+### read/
 
-- **データベースアクセス**: Prismaクライアント（`@repo/schema/src/client`）を使用
-- **データ取得**: `find*`関数でデータを取得し、Valibotスキーマで検証して返す
-- **データ保存**: `create`, `update`などの関数でデータを保存
-- **エラーハンドリング**: データベースエラーやバリデーションエラーを`TaggedError`で返す
-- **型変換**: データベースの型をドメイン型に変換
+- **query/**: DBなどからの取得処理を実装する
+- **presenter/**: 取得結果をUIが必要とする形へ整形する
+- **schema/**: 取得専用DTO（レスポンススキーマ）を定義する
+- **責務の分離**: 取得系では状態変更を行わない
 
-### usecase/
+### write/
 
-- **ユースケースの実装**: 各ユースケースごとにファイルを分ける（例：`update-site-name.ts`）
+- **usecase/**: 更新系ユースケース（コマンド）を実装する
+- **repository/**: Entityの永続化と復元（Entity -> DB、DB -> Entity）を担当する
+- **gateway/**: 外部SDKや外部サービス連携を抽象化する
 - **エラーハンドリング**: `TaggedError`を使用してエラーを返す
-- **ドメインロジックとデータアクセスの調整**: `repo`と`domain`を組み合わせてユースケースを実現
-- **トランザクションの境界**: 必要に応じてトランザクション管理を行う
-- **`index.ts`**: 共通のユースケース（例：`createSiteUsecase`）を定義
+- **トランザクションの境界**: 必要に応じてwrite側で管理する
 
 ## 依存関係
 
-- `usecase` → `repo`, `domain`
-- `repo` → `domain`
+- `read` → `domain`（必要な型や値オブジェクトを参照）
+- `write/usecase` → `domain`, `write/repository`, `write/gateway`
+- `write/repository` → `domain`
+- `write/gateway` → 外部SDK
 - `domain` → 依存なし（他のfeaturesパッケージのdomainは参照可能）
 
 ## 実装例
@@ -71,86 +85,85 @@ packages/features/src/{feature-name}/
 #### ID値オブジェクトの例
 
 ```typescript
-// domain/site-id.ts
-import * as v from "valibot"
-import { TaggedError } from "@nakanoaas/tagged-error"
+// domain/value-object/site-id.ts
+import * as v from "valibot";
+import { TaggedError } from "@nakanoaas/tagged-error";
 
 // 基本のIDスキーマ（brandで型を区別）
-export const SiteIdSchema = v.pipe(
-  v.string(),
-  v.uuid(),
-  v.brand("SiteId")
-)
-export type SiteId = v.InferOutput<typeof SiteIdSchema>
+export const SiteIdSchema = v.pipe(v.string(), v.uuid(), v.brand("SiteId"));
+export type SiteId = v.InferOutput<typeof SiteIdSchema>;
 
 // エンコードされたIDスキーマ（URL用など）
 export const EncodedSiteIdSchema = v.pipe(
   v.string(),
   v.check(isUuid58),
-  v.brand("EncodedSiteId")
-)
-export type EncodedSiteId = v.InferOutput<typeof EncodedSiteIdSchema>
+  v.brand("EncodedSiteId"),
+);
+export type EncodedSiteId = v.InferOutput<typeof EncodedSiteIdSchema>;
 
 // パース関数（文字列から値オブジェクトへの変換）
 export function parseSiteId(
   value: string | EncodedSiteId,
-): SiteId | TaggedError<"INVALID_SITE_ID", unknown> | TaggedError<"INVALID_ENCODED_SITE_ID", unknown> {
+):
+  | SiteId
+  | TaggedError<"INVALID_SITE_ID", unknown>
+  | TaggedError<"INVALID_ENCODED_SITE_ID", unknown> {
   if (value.length === 22) {
     // エンコードされたIDのデコード
-    const result = uuid58DecodeSafe(value)
+    const result = uuid58DecodeSafe(value);
     if (result instanceof Error) {
       return new TaggedError("INVALID_ENCODED_SITE_ID", {
         message: "不正なエンコードされたサイトIDです",
         cause: result,
-      })
+      });
     }
-    return result as SiteId
+    return result as SiteId;
   }
 
   // UUID形式のパース
-  const result = v.safeParse(SiteIdSchema, value)
+  const result = v.safeParse(SiteIdSchema, value);
   if (!result.success) {
     return new TaggedError("INVALID_SITE_ID", {
       message: "不正なサイトIDです",
       cause: result,
-    })
+    });
   }
-  return result.output
+  return result.output;
 }
 
 // エンコード関数
 export function encodeSiteId(siteId: SiteId): EncodedSiteId {
-  return uuid58Encode(siteId) as EncodedSiteId
+  return uuid58Encode(siteId) as EncodedSiteId;
 }
 
 // 生成関数
 export function generateSiteId(): SiteId {
-  return generateUuid() as SiteId
+  return generateUuid() as SiteId;
 }
 ```
 
 #### 数値型のID値オブジェクトの例
 
 ```typescript
-// domain/id.ts (short-url)
-import * as v from "valibot"
+// domain/value-object/id.ts (short-url)
+import * as v from "valibot";
 
 // 数値型のID（brandで型を区別）
 export const ShortUrlIdSchema = v.pipe(
   v.number(),
   v.minValue(0),
   v.integer(),
-  v.brand("ShortUrlId")
-)
-export type ShortUrlId = v.InferOutput<typeof ShortUrlIdSchema>
+  v.brand("ShortUrlId"),
+);
+export type ShortUrlId = v.InferOutput<typeof ShortUrlIdSchema>;
 
 // エンコードされたID
 export const EncodedShortUrlIdSchema = v.pipe(
   v.string(),
   v.regex(/^[1-9A-HJ-NP-Za-km-z]+$/),
-  v.brand("EncodedShortUrlId")
-)
-export type EncodedShortUrlId = v.InferOutput<typeof EncodedShortUrlIdSchema>
+  v.brand("EncodedShortUrlId"),
+);
+export type EncodedShortUrlId = v.InferOutput<typeof EncodedShortUrlIdSchema>;
 
 // エンコード/デコード関数
 export function encodeShortUrlId(num: ShortUrlId): EncodedShortUrlId | Error {
@@ -167,31 +180,31 @@ export function decodeShortUrlId(
 #### シンプルな値オブジェクトの例
 
 ```typescript
-// domain/year-month.ts
-import * as v from "valibot"
+// domain/value-object/year-month.ts
+import * as v from "valibot";
 
 // 年月を表す値オブジェクト（brandなしでも可）
 export const YearMonthSchema = v.pipe(
   v.string(),
   v.regex(/^\d{4}-\d{2}$/, "YYYY-MM形式である必要があります"),
-)
-export type YearMonth = v.InferOutput<typeof YearMonthSchema>
+);
+export type YearMonth = v.InferOutput<typeof YearMonthSchema>;
 
 // より複雑な値オブジェクト（brandを使用）
 export const ColorCodeSchema = v.pipe(
   v.string(),
   v.regex(/^#([0-9a-fA-F]{6})$/),
-  v.brand("ColorCode")
-)
-export type ColorCode = v.InferOutput<typeof ColorCodeSchema>
+  v.brand("ColorCode"),
+);
+export type ColorCode = v.InferOutput<typeof ColorCodeSchema>;
 ```
 
 ### エンティティの例
 
 ```typescript
-// domain/site.ts
-import * as v from "valibot"
-import { TaggedError } from "@nakanoaas/tagged-error"
+// domain/entity/site.ts
+import * as v from "valibot";
+import { TaggedError } from "@nakanoaas/tagged-error";
 
 export const SiteSchema = v.object({
   id: SiteIdSchema,
@@ -200,9 +213,9 @@ export const SiteSchema = v.object({
   lpUrl: v.pipe(v.string(), v.url()),
   createdAt: v.date(),
   updatedAt: v.date(),
-})
+});
 
-export type Site = v.InferOutput<typeof SiteSchema>
+export type Site = v.InferOutput<typeof SiteSchema>;
 
 export function constructSite(
   orgId: string,
@@ -216,23 +229,23 @@ export function constructSite(
     lpUrl: lpUrl,
     createdAt: new Date(),
     updatedAt: new Date(),
-  })
+  });
   if (!result.success) {
     return new TaggedError("INVALID_SITE", {
       message: "不正なサイトです",
       cause: result.issues,
-    })
+    });
   }
-  return result.output
+  return result.output;
 }
 ```
 
-### repo/の例
+### write/repository/の例
 
 ```typescript
-// repo/index.ts
+// write/repository/site-repository.ts
 import { client } from "@repo/schema/src/client"
-import { SiteSchema } from "../domain/site"
+import { SiteSchema } from "../../domain/entity/site"
 
 export async function findSiteById(
   orgId: OrganizationId,
@@ -252,36 +265,60 @@ export async function findSiteById(
 }
 ```
 
-### usecase/の例
+### write/usecase/の例
 
 ```typescript
-// usecase/update-site-name.ts
-import { updateName } from "../domain/site"
-import * as repo from "../repo"
+// write/usecase/update-site-name.ts
+import { updateName } from "../../domain/entity/site"
+import * as repository from "../repository/site-repository"
 
 export async function updateSiteNameUsecase(
   orgId: OrganizationId,
   siteId: SiteId,
   name: string,
 ) {
-  const site = await repo.findSiteById(orgId, siteId)
-  if (site === null || site instanceof Error) {
+  const site = await repository.findSiteById(orgId, siteId)
+  if (site === null || site instanceof TaggedError) {
     return new TaggedError("NOT_FOUND_SITE", { ... })
   }
 
   const newSite = updateName(site, name)
-  if (newSite instanceof Error) {
+  if (newSite instanceof TaggedError) {
     return new TaggedError("INVALID_SITE", { ... })
   }
 
-  await repo.saveSite(newSite)
+  await repository.saveSite(newSite)
   return
+}
+```
+
+### read/query + presenter/の例
+
+```typescript
+// read/query/find-site-detail.ts
+import { client } from "@repo/schema/src/client";
+import { presentSiteDetail } from "../presenter/site-detail-presenter";
+import { type SiteDetailDto } from "../schema/site-detail-dto";
+
+export async function findSiteDetailQuery(
+  siteId: SiteId,
+): Promise<
+  SiteDetailDto | TaggedError<"INVALID_SITE_DETAIL_DTO", unknown> | null
+> {
+  const row = await client.site.findUnique({ where: { id: siteId } });
+  if (!row) return null;
+
+  const dto = presentSiteDetail(row);
+  if (dto instanceof TaggedError) {
+    return dto;
+  }
+  return dto;
 }
 ```
 
 ## ベストプラクティス
 
-1. **各レイヤーの責務を明確に分離する**: レイヤー間の依存関係を守る
+1. **CQRSの責務分離を守る**: read（取得）とwrite（更新）を明確に分離する
 2. **型安全性**: Valibotスキーマを使用して型安全性を確保する
 3. **値オブジェクトの実装**:
    - `v.brand()`を使用してプリミティブ型を区別する（例：`SiteId`と`OrganizationId`を区別）
@@ -289,5 +326,6 @@ export async function updateSiteNameUsecase(
    - URL用などには`Encoded*`型と`encode*`/`decode*`関数を提供する
 4. **エラーハンドリング**: `TaggedError`を使用してエラーを型安全に扱う
 5. **純粋関数**: `domain/`の関数は純粋関数として実装する
-6. **ユースケースの分割**: 各ユースケースは個別のファイルに分ける
-7. **バリデーション**: `repo/`でデータベースから取得したデータをValibotスキーマで検証する
+6. **ユースケースの分割**: `write/usecase/`の各ユースケースは個別ファイルに分ける
+7. **DTOの明示**: `read/schema/`で取得用DTOを定義し、レスポンス整形を一元化する
+8. **永続化の責務**: 永続化ロジックは`write/repository/`に集約する
