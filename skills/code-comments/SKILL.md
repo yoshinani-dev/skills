@@ -1,6 +1,6 @@
 ---
 name: code-comments
-description: コードコメントの書き方・判断基準を統一する。実装時・リファクタリング時・コードレビュー時に、コメントの要否・内容・表記を決める。トリガー: コメント、comment、JSDoc、TSDoc、@deprecated、TODO、NOTE、コメント追加、コメント削除、コメント規約。
+description: コードコメントの書き方・判断基準を統一する。実装時・リファクタリング時・コードレビュー時に、コメントの要否・内容・表記を決める。トリガーはコメント、comment、JSDoc、TSDoc、@deprecated、TODO、NOTE、コメント追加、コメント削除、コメント規約。
 ---
 
 # コードコメント規約
