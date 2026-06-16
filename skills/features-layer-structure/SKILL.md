@@ -40,6 +40,29 @@ packages/features/src/{feature-name}/
         └── {gateway}.ts       # 外部SDKや外部サービス連携
 ```
 
+### 依存に基づくネスト構造
+
+`{feature-name}`配下は、依存関係を表現するために機能をネストしてよいです。
+
+- 子featureは親featureに依存してよい
+- 親featureは子featureに依存しない（一方向依存）
+- 同階層feature同士の直接依存は避け、必要なら共通の親featureへ寄せる
+
+例: 「organizationの中にprojectがある」場合
+
+```
+packages/features/src/organization/
+├── domain/
+├── read/
+├── write/
+└── project/
+    ├── domain/
+    ├── read/
+    └── write/
+```
+
+この場合、`organization/project/*` は `organization/*` を参照してよく、`organization/*` から `organization/project/*` は参照しません。
+
 ## レイヤーの責務
 
 ### domain/
@@ -75,6 +98,7 @@ packages/features/src/{feature-name}/
 - `write/repository` → `domain`
 - `write/gateway` → 外部SDK
 - `domain` → 依存なし（他のfeaturesパッケージのdomainは参照可能）
+- ネストfeatureの依存方向: `親/子` は `親` へ依存可能、`親` は `親/子` に依存不可
 
 ## 実装例
 
